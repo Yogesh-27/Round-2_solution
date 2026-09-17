@@ -1,0 +1,1 @@
+export function Notice({ kind, children }: { kind: 'success' | 'error' | 'info'; children: React.ReactNode }) { return <div className={`notice notice-${kind}`} role={kind === 'error' ? 'alert' : 'status'}>{children}</div>; }

@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STAFF
+  ADMIN
+}
+
+enum Tier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSED
+}
+
+enum PointTransactionType {
+  PURCHASE_EARN
+  REDEMPTION
+  ADJUSTMENT
+  EXPIRATION
+  REVERSAL
+}
+
+model User {
+  id           String          @id @default(uuid()) @db.Uuid
+  name         String
+  email        String          @unique
+  passwordHash String
+  role         UserRole        @default(STAFF)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  purchases    Purchase[]
+  redemptions  Redemption[]
+  ledgerEntries PointLedger[]
+
+  @@index([createdAt])
+}
+
+model Member {
+  id                    String           @id @default(uuid()) @db.Uuid
+  fullName              String
+  phoneNumber           String
+  normalizedPhoneNumber String           @unique
+  email                 String?
+  currentTier           Tier             @default(BRONZE)
+  lifetimeEarnedPoints  Int              @default(0)
+  currentPointsBalance  Int              @default(0)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  purchases             Purchase[]
+  redemptions           Redemption[]
+  pointLedger           PointLedger[]
+  pointLots              PointLot[]
+
+  @@index([createdAt])
+  @@index([fullName])
+  @@index([currentTier])
+  @@index([currentPointsBalance])
+  @@index([lifetimeEarnedPoints])
+}
+
+model Reward {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  description String
+  pointsCost  Int
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  redemptions Redemption[]
+
+  @@index([active])
+}
+
+model Purchase {
+  id               String    @id @default(uuid()) @db.Uuid
+  memberId         String    @db.Uuid
+  amount           Decimal   @db.Decimal(12, 2)
+  currency         String    @db.VarChar(3)
+  tierAtPurchase   Tier
+  earningMultiplier Decimal  @db.Decimal(4, 2)
+  pointsEarned     Int
+  clientRequestId  String    @unique
+  notes            String?
+  createdById      String    @db.Uuid
+  createdAt        DateTime  @default(now())
+  member           Member    @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  createdBy        User      @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([memberId, createdAt])
+  @@index([createdById])
+}
+
+model Redemption {
+  id              String   @id @default(uuid()) @db.Uuid
+  memberId        String   @db.Uuid
+  rewardId        String   @db.Uuid
+  pointsUsed      Int
+  clientRequestId String   @unique
+  notes           String?
+  createdById      String  @db.Uuid
+  createdAt       DateTime @default(now())
+  member          Member  @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  reward          Reward  @relation(fields: [rewardId], references: [id], onDelete: Restrict)
+  createdBy       User    @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([memberId, createdAt])
+  @@index([rewardId])
+  @@index([createdById])
+}
+
+model PointLedger {
+  id             String               @id @default(uuid()) @db.Uuid
+  memberId       String               @db.Uuid
+  transactionType PointTransactionType
+  pointsDelta    Int
+  balanceAfter   Int
+  referenceId    String?
+  referenceType  String?
+  description    String
+  createdById    String?              @db.Uuid
+  createdAt      DateTime             @default(now())
+  member         Member               @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  createdBy      User?                @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([memberId, createdAt])
+  @@index([transactionType])
+  @@index([referenceId])
+}
+
+model PointLot {
+  id             String   @id @default(uuid()) @db.Uuid
+  memberId       String   @db.Uuid
+  sourceType     String
+  sourceId       String?
+  originalPoints Int
+  remainingPoints Int
+  earnedAt       DateTime
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  member         Member   @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([memberId, expiresAt, remainingPoints])
+  @@index([sourceId])
+}
+
+model ClockState {
+  id          Int      @id
+  currentTime DateTime
+  updatedAt   DateTime @updatedAt
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  eventType     String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  availableAt   DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+  processedAt   DateTime?
+
+  @@index([status, availableAt, createdAt])
+  @@index([aggregateId, createdAt])
+}
+
+model LoyaltyProgram {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String   @unique
+  currency         String   @db.VarChar(3)
+  baseEarningRate  Decimal  @db.Decimal(8, 4)
+  bronzeThreshold  Int
+  silverThreshold  Int
+  goldThreshold      Int
+  platinumThreshold  Int
+  bronzeMultiplier   Decimal  @db.Decimal(4, 2)
+  silverMultiplier   Decimal  @db.Decimal(4, 2)
+  goldMultiplier     Decimal  @db.Decimal(4, 2)
+  platinumMultiplier Decimal  @db.Decimal(4, 2)
+  pointsExpiryDays   Int      @default(90)
+  active             Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([active])
+}
